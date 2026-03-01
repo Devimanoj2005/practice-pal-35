@@ -1,28 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Mic, MicOff, Phone, Clock, MessageSquare } from "lucide-react";
+import { Mic, MicOff, Phone, Clock, MessageSquare, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const sampleQuestions = [
-  "Tell me about yourself and your experience.",
-  "Can you explain the virtual DOM and how React uses it?",
-  "How do you handle state management in large applications?",
-  "Describe a challenging bug you've fixed recently.",
-  "What's your approach to testing frontend applications?",
-  "How do you optimize application performance?",
-  "Explain the difference between SQL and NoSQL databases.",
-  "How do you handle authentication in web applications?",
-];
-
-const sampleResponses = [
-  "That's a great answer. Let me ask you about...",
-  "Interesting perspective. Can you elaborate on...",
-  "I see. Now let's move to the next topic...",
-  "Good point. How would you handle...",
-];
+import { useToast } from "@/hooks/use-toast";
+import { useSpeechRecognition, useSpeechSynthesis } from "@/hooks/use-speech";
+import { supabase } from "@/integrations/supabase/client";
 
 type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type DisplayMessage = {
   speaker: "AI" | "User";
   text: string;
   timestamp: Date;
@@ -31,14 +21,25 @@ type Message = {
 export default function InterviewSession() {
   const navigate = useNavigate();
   const location = useLocation();
-  const config = location.state || { role: "Frontend Developer", level: "Mid-Level", techStack: ["React"], questionCount: 5 };
+  const { toast } = useToast();
+  const config = location.state || {
+    role: "Frontend Developer",
+    level: "Mid-Level",
+    techStack: ["React"],
+    questionCount: 5,
+  };
 
   const [isActive, setIsActive] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
+  const [isAIThinking, setIsAIThinking] = useState(false);
+  const [isUserTurn, setIsUserTurn] = useState(false);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  const { isListening, transcript, start: startListening, stop: stopListening, supported: sttSupported } = useSpeechRecognition();
+  const { isSpeaking, speak, cancel: cancelSpeech } = useSpeechSynthesis();
 
   // Timer
   useEffect(() => {
@@ -47,58 +48,106 @@ export default function InterviewSession() {
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // Simulate interview flow
-  const startInterview = useCallback(() => {
+  // Auto-scroll transcript
+  useEffect(() => {
+    transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: "smooth" });
+  }, [displayMessages, transcript]);
+
+  const callAI = useCallback(async (msgs: Message[]): Promise<string> => {
+    const { data, error } = await supabase.functions.invoke("ai-interview", {
+      body: {
+        action: "interview",
+        messages: msgs,
+        config: {
+          role: config.role,
+          level: config.level,
+          techStack: config.techStack,
+          questionCount: config.questionCount,
+        },
+      },
+    });
+
+    if (error) throw new Error(error.message || "AI request failed");
+    if (data?.error) throw new Error(data.error);
+    return data.response;
+  }, [config]);
+
+  const addDisplayMessage = useCallback((speaker: "AI" | "User", text: string) => {
+    setDisplayMessages((prev) => [...prev, { speaker, text, timestamp: new Date() }]);
+  }, []);
+
+  const handleAIResponse = useCallback(async (updatedMessages: Message[]) => {
+    setIsAIThinking(true);
+    setIsUserTurn(false);
+
+    try {
+      const response = await callAI(updatedMessages);
+      const aiMsg: Message = { role: "assistant", content: response };
+      const newMsgs = [...updatedMessages, aiMsg];
+      setMessages(newMsgs);
+      addDisplayMessage("AI", response);
+      setCurrentQuestion((q) => q + 1);
+
+      // Speak the response
+      await speak(response);
+
+      // After speaking, it's user's turn
+      setIsUserTurn(true);
+      if (sttSupported) {
+        startListening();
+      }
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "AI Error",
+        description: err.message || "Failed to get AI response",
+      });
+      setIsUserTurn(true);
+    } finally {
+      setIsAIThinking(false);
+    }
+  }, [callAI, speak, startListening, sttSupported, addDisplayMessage, toast]);
+
+  const startInterview = useCallback(async () => {
     setIsActive(true);
-    setIsAISpeaking(true);
-    const greeting = `Hello! Welcome to your ${config.role} interview. I'm your AI interviewer today. Let's begin with the first question.`;
-    setMessages([{ speaker: "AI", text: greeting, timestamp: new Date() }]);
+    setMessages([]);
+    setDisplayMessages([]);
+    setCurrentQuestion(0);
 
-    setTimeout(() => {
-      const q = sampleQuestions[0];
-      setMessages((prev) => [...prev, { speaker: "AI", text: q, timestamp: new Date() }]);
-      setIsAISpeaking(false);
-    }, 2000);
-  }, [config.role]);
+    // Send initial empty message to get AI greeting + first question
+    const initialMsg: Message = { role: "user", content: "Start the interview." };
+    await handleAIResponse([initialMsg]);
+  }, [handleAIResponse]);
 
-  // Simulate user response cycle
-  const simulateResponse = useCallback(() => {
-    if (currentQuestion >= config.questionCount - 1) return;
+  const submitAnswer = useCallback(async () => {
+    const userText = stopListening();
+    if (!userText.trim()) {
+      toast({ description: "No speech detected. Please try again." });
+      if (sttSupported) startListening();
+      return;
+    }
 
-    // User "responds"
-    setMessages((prev) => [
-      ...prev,
-      { speaker: "User", text: "I would approach this by considering the trade-offs and best practices...", timestamp: new Date() },
-    ]);
+    const userMsg: Message = { role: "user", content: userText };
+    const updatedMsgs = [...messages, userMsg];
+    setMessages(updatedMsgs);
+    addDisplayMessage("User", userText);
 
-    // AI follows up
-    setTimeout(() => {
-      setIsAISpeaking(true);
-      const responseIdx = currentQuestion % sampleResponses.length;
-      setMessages((prev) => [
-        ...prev,
-        { speaker: "AI", text: sampleResponses[responseIdx], timestamp: new Date() },
-      ]);
+    await handleAIResponse(updatedMsgs);
+  }, [stopListening, messages, handleAIResponse, addDisplayMessage, sttSupported, startListening, toast]);
 
-      setTimeout(() => {
-        const nextQ = currentQuestion + 1;
-        setCurrentQuestion(nextQ);
-        const questionIdx = nextQ % sampleQuestions.length;
-        setMessages((prev) => [
-          ...prev,
-          { speaker: "AI", text: sampleQuestions[questionIdx], timestamp: new Date() },
-        ]);
-        setIsAISpeaking(false);
-      }, 1500);
-    }, 1000);
-  }, [currentQuestion, config.questionCount]);
-
-  const endInterview = () => {
+  const endInterview = useCallback(() => {
+    stopListening();
+    cancelSpeech();
     setIsActive(false);
     navigate("/feedback", {
-      state: { ...config, duration: elapsed, messages, questionCount: currentQuestion + 1 },
+      state: {
+        ...config,
+        duration: elapsed,
+        transcript: displayMessages,
+        messages,
+      },
     });
-  };
+  }, [stopListening, cancelSpeech, navigate, config, elapsed, displayMessages, messages]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -115,7 +164,9 @@ export default function InterviewSession() {
         <div className="flex items-center gap-3">
           <Mic className="w-5 h-5 text-primary" />
           <span className="font-display font-semibold">{config.role} Interview</span>
-          <span className="text-xs text-muted-foreground glass px-2 py-0.5 rounded-full">{config.level}</span>
+          <span className="text-xs text-muted-foreground glass px-2 py-0.5 rounded-full">
+            {config.level}
+          </span>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -123,7 +174,7 @@ export default function InterviewSession() {
             <span className="font-mono">{formatTime(elapsed)}</span>
           </div>
           <div className="text-xs text-muted-foreground">
-            Q {currentQuestion + 1}/{config.questionCount}
+            Q {currentQuestion}/{config.questionCount}
           </div>
         </div>
       </header>
@@ -140,9 +191,15 @@ export default function InterviewSession() {
               <Mic className="w-10 h-10 text-primary" />
             </div>
             <h2 className="text-2xl font-display font-bold mb-2">Ready to Begin?</h2>
-            <p className="text-muted-foreground mb-8">
-              Your AI interviewer will ask you {config.questionCount} questions about {config.techStack?.join(", ")}.
+            <p className="text-muted-foreground mb-4">
+              Your AI interviewer will ask you {config.questionCount} questions about{" "}
+              {config.techStack?.join(", ")}.
             </p>
+            {!sttSupported && (
+              <p className="text-sm text-destructive mb-4">
+                ⚠ Speech recognition not supported in this browser. You can type answers instead.
+              </p>
+            )}
             <Button variant="glow" size="xl" onClick={startInterview}>
               <Mic className="w-5 h-5" />
               Start Interview
@@ -151,21 +208,33 @@ export default function InterviewSession() {
         ) : (
           <>
             {/* Voice indicator */}
-            <div className="flex flex-col items-center mb-8">
+            <div className="flex flex-col items-center mb-6">
               <motion.div
                 className={`relative w-20 h-20 rounded-full flex items-center justify-center ${
-                  isAISpeaking ? "bg-primary/20" : "bg-secondary"
+                  isSpeaking || isAIThinking ? "bg-primary/20" : isListening ? "bg-accent/20" : "bg-secondary"
                 }`}
-                animate={isAISpeaking ? { scale: [1, 1.05, 1] } : {}}
+                animate={isSpeaking ? { scale: [1, 1.05, 1] } : {}}
                 transition={{ repeat: Infinity, duration: 1.5 }}
               >
-                {isAISpeaking && (
+                {isSpeaking && (
                   <div className="absolute inset-0 rounded-full border-2 border-primary/30 animate-pulse-ring" />
                 )}
-                <MessageSquare className={`w-8 h-8 ${isAISpeaking ? "text-primary" : "text-muted-foreground"}`} />
+                {isAIThinking ? (
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                ) : (
+                  <MessageSquare
+                    className={`w-8 h-8 ${isSpeaking ? "text-primary" : isListening ? "text-accent" : "text-muted-foreground"}`}
+                  />
+                )}
               </motion.div>
               <span className="text-xs text-muted-foreground mt-2">
-                {isAISpeaking ? "AI is speaking..." : "Your turn to answer"}
+                {isAIThinking
+                  ? "AI is thinking..."
+                  : isSpeaking
+                  ? "AI is speaking..."
+                  : isListening
+                  ? "Listening... Speak your answer"
+                  : "Waiting..."}
               </span>
 
               {/* Waveform */}
@@ -174,23 +243,35 @@ export default function InterviewSession() {
                   <div
                     key={i}
                     className={`w-1 rounded-full transition-all ${
-                      isAISpeaking ? "bg-primary" : isMuted ? "bg-muted-foreground/30" : "bg-accent"
+                      isSpeaking ? "bg-primary" : isListening ? "bg-accent" : "bg-muted-foreground/30"
                     }`}
                     style={{
-                      animation: isActive && !isMuted
-                        ? `waveform ${0.8 + Math.random() * 0.8}s ease-in-out ${i * 0.04}s infinite`
-                        : "none",
-                      height: isActive && !isMuted ? undefined : "4px",
+                      animation:
+                        isSpeaking || isListening
+                          ? `waveform ${0.8 + Math.random() * 0.8}s ease-in-out ${i * 0.04}s infinite`
+                          : "none",
+                      height: isSpeaking || isListening ? undefined : "4px",
                     }}
                   />
                 ))}
               </div>
             </div>
 
-            {/* Transcript */}
-            <div className="w-full flex-1 overflow-y-auto max-h-[300px] space-y-3 mb-6 scrollbar-thin">
+            {/* Live transcript of what user is saying */}
+            {isListening && transcript && (
+              <div className="w-full mb-4 glass rounded-xl px-4 py-3 border border-accent/20">
+                <span className="text-xs text-accent block mb-1">You (live):</span>
+                <span className="text-sm text-foreground">{transcript}</span>
+              </div>
+            )}
+
+            {/* Transcript history */}
+            <div
+              ref={transcriptRef}
+              className="w-full flex-1 overflow-y-auto max-h-[300px] space-y-3 mb-6 scrollbar-thin"
+            >
               <AnimatePresence>
-                {messages.map((msg, i) => (
+                {displayMessages.map((msg, i) => (
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, y: 10 }}
@@ -204,7 +285,9 @@ export default function InterviewSession() {
                           : "glass"
                       }`}
                     >
-                      <span className="text-xs text-muted-foreground block mb-1">{msg.speaker}</span>
+                      <span className="text-xs text-muted-foreground block mb-1">
+                        {msg.speaker}
+                      </span>
                       {msg.text}
                     </div>
                   </motion.div>
@@ -214,22 +297,37 @@ export default function InterviewSession() {
 
             {/* Controls */}
             <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="icon"
-                className="rounded-full w-12 h-12"
-                onClick={() => setIsMuted(!isMuted)}
-              >
-                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={simulateResponse}
-                className="px-6"
-              >
-                Simulate Response
-              </Button>
+              {isUserTurn && !isSpeaking && !isAIThinking && (
+                <>
+                  {isListening ? (
+                    <Button variant="outline" size="lg" onClick={submitAnswer} className="px-6">
+                      <MicOff className="w-5 h-5 mr-2" />
+                      Submit Answer
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      onClick={() => sttSupported && startListening()}
+                      className="px-6"
+                      disabled={!sttSupported}
+                    >
+                      <Mic className="w-5 h-5 mr-2" />
+                      Start Speaking
+                    </Button>
+                  )}
+
+                  {/* Text input fallback */}
+                  {!sttSupported && <TextInputFallback onSubmit={async (text) => {
+                    const userMsg: Message = { role: "user", content: text };
+                    const updatedMsgs = [...messages, userMsg];
+                    setMessages(updatedMsgs);
+                    addDisplayMessage("User", text);
+                    await handleAIResponse(updatedMsgs);
+                  }} />}
+                </>
+              )}
+
               <Button
                 variant="destructive"
                 size="icon"
@@ -242,6 +340,38 @@ export default function InterviewSession() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+function TextInputFallback({ onSubmit }: { onSubmit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <div className="flex gap-2">
+      <input
+        className="glass rounded-lg px-3 py-2 text-sm text-foreground bg-transparent border border-border focus:outline-none focus:border-primary"
+        placeholder="Type your answer..."
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && text.trim()) {
+            onSubmit(text.trim());
+            setText("");
+          }
+        }}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          if (text.trim()) {
+            onSubmit(text.trim());
+            setText("");
+          }
+        }}
+      >
+        Send
+      </Button>
     </div>
   );
 }

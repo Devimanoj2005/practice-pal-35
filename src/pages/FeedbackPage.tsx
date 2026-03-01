@@ -1,6 +1,17 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Download, TrendingUp, MessageSquare, Brain, Shield, Lightbulb } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  TrendingUp,
+  MessageSquare,
+  Brain,
+  Shield,
+  Lightbulb,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -16,54 +27,126 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-const radarData = [
-  { skill: "Technical", value: 82 },
-  { skill: "Communication", value: 75 },
-  { skill: "Confidence", value: 68 },
-  { skill: "Problem Solving", value: 85 },
-  { skill: "Clarity", value: 78 },
-  { skill: "Depth", value: 72 },
-];
-
-const barData = [
-  { question: "Q1", score: 85 },
-  { question: "Q2", score: 72 },
-  { question: "Q3", score: 90 },
-  { question: "Q4", score: 65 },
-  { question: "Q5", score: 78 },
-];
-
-const scores = [
-  { label: "Overall Score", value: 78, icon: TrendingUp, color: "text-primary" },
-  { label: "Technical Knowledge", value: 82, icon: Brain, color: "text-primary" },
-  { label: "Communication", value: 75, icon: MessageSquare, color: "text-accent" },
-  { label: "Confidence", value: 68, icon: Shield, color: "text-warning" },
-];
-
-const strengths = [
-  "Strong understanding of React component lifecycle",
-  "Clear explanation of state management concepts",
-  "Good use of technical terminology",
-];
-
-const weaknesses = [
-  "Could elaborate more on system design decisions",
-  "Need deeper knowledge of database optimization",
-  "Should practice concise answers under pressure",
-];
-
-const suggestions = [
-  "Practice explaining complex concepts in simple terms",
-  "Review system design fundamentals (load balancing, caching)",
-  "Work on time management during responses",
-  "Study common behavioral interview frameworks (STAR method)",
-];
+type Feedback = {
+  overall_score: number;
+  technical_score: number;
+  communication_score: number;
+  confidence_score: number;
+  problem_solving_score: number;
+  clarity_score: number;
+  depth_score: number;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  question_scores: { question: string; score: number }[];
+  summary: string;
+};
 
 export default function FeedbackPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const config = location.state || {};
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function generateFeedback() {
+      const transcript = config.transcript;
+      if (!transcript || transcript.length === 0) {
+        // Fallback if no transcript
+        setFeedback(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.functions.invoke("ai-interview", {
+          body: {
+            action: "feedback",
+            config: {
+              role: config.role || "Frontend Developer",
+              level: config.level || "Mid-Level",
+            },
+            transcript: transcript.map((m: any) => ({
+              speaker: m.speaker,
+              text: m.text,
+            })),
+          },
+        });
+
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(data.error);
+        if (data?.feedback) {
+          setFeedback(data.feedback);
+        }
+      } catch (err: any) {
+        toast({
+          variant: "destructive",
+          title: "Feedback Generation Failed",
+          description: err.message || "Could not generate feedback",
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    generateFeedback();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-display font-bold mb-2">Analyzing Your Interview...</h2>
+          <p className="text-muted-foreground">
+            AI is reviewing your responses and generating detailed feedback
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!feedback) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-display font-bold mb-2">No Interview Data</h2>
+          <p className="text-muted-foreground mb-6">
+            Start an interview first to receive feedback.
+          </p>
+          <Button variant="hero" onClick={() => navigate("/setup")}>
+            Start Interview
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const radarData = [
+    { skill: "Technical", value: feedback.technical_score },
+    { skill: "Communication", value: feedback.communication_score },
+    { skill: "Confidence", value: feedback.confidence_score },
+    { skill: "Problem Solving", value: feedback.problem_solving_score },
+    { skill: "Clarity", value: feedback.clarity_score },
+    { skill: "Depth", value: feedback.depth_score },
+  ];
+
+  const barData = feedback.question_scores.map((q, i) => ({
+    question: `Q${i + 1}`,
+    score: q.score,
+  }));
+
+  const scores = [
+    { label: "Overall Score", value: feedback.overall_score, icon: TrendingUp, color: "text-primary" },
+    { label: "Technical Knowledge", value: feedback.technical_score, icon: Brain, color: "text-primary" },
+    { label: "Communication", value: feedback.communication_score, icon: MessageSquare, color: "text-accent" },
+    { label: "Confidence", value: feedback.confidence_score, icon: Shield, color: "text-warning" },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-hero relative overflow-hidden">
@@ -79,14 +162,12 @@ export default function FeedbackPage() {
       </nav>
 
       <main className="relative z-10 max-w-6xl mx-auto px-6 py-4 pb-20">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-3xl font-display font-bold mb-1">Interview Feedback</h1>
-          <p className="text-muted-foreground mb-8">
-            {config.role || "Frontend Developer"} · {config.level || "Mid-Level"} · {config.questionCount || 5} questions
+          <p className="text-muted-foreground mb-2">
+            {config.role || "Frontend Developer"} · {config.level || "Mid-Level"}
           </p>
+          <p className="text-sm text-muted-foreground mb-8">{feedback.summary}</p>
         </motion.div>
 
         {/* Score Cards */}
@@ -172,7 +253,7 @@ export default function FeedbackPage() {
               <h3 className="font-display font-semibold text-sm">Strengths</h3>
             </div>
             <ul className="space-y-3">
-              {strengths.map((s, i) => (
+              {feedback.strengths.map((s, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex gap-2">
                   <span className="text-success mt-1">•</span> {s}
                 </li>
@@ -191,7 +272,7 @@ export default function FeedbackPage() {
               <h3 className="font-display font-semibold text-sm">Areas to Improve</h3>
             </div>
             <ul className="space-y-3">
-              {weaknesses.map((w, i) => (
+              {feedback.weaknesses.map((w, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex gap-2">
                   <span className="text-destructive mt-1">•</span> {w}
                 </li>
@@ -210,7 +291,7 @@ export default function FeedbackPage() {
               <h3 className="font-display font-semibold text-sm">Suggestions</h3>
             </div>
             <ul className="space-y-3">
-              {suggestions.map((s, i) => (
+              {feedback.suggestions.map((s, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex gap-2">
                   <span className="text-warning mt-1">•</span> {s}
                 </li>
