@@ -118,10 +118,22 @@ export default function InterviewSession() {
     setDisplayMessages([]);
     setCurrentQuestion(0);
 
-    // Send initial empty message to get AI greeting + first question
+    // Create session in DB
+    if (user) {
+      const { data } = await supabase.from("interview_sessions").insert({
+        user_id: user.id,
+        role: config.role,
+        level: config.level,
+        tech_stack: config.techStack || [],
+        question_count: config.questionCount,
+        status: "in_progress",
+      }).select("id").single();
+      if (data) setSessionId(data.id);
+    }
+
     const initialMsg: Message = { role: "user", content: "Start the interview." };
     await handleAIResponse([initialMsg]);
-  }, [handleAIResponse]);
+  }, [handleAIResponse, user, config]);
 
   const submitAnswer = useCallback(async () => {
     const userText = stopListening();
