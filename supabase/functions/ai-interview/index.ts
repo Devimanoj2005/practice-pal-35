@@ -35,7 +35,7 @@ RULES:
 - If the candidate's answer is wrong, gently correct them and explain briefly
 - Track which question number you're on
 
-Start by greeting the candidate and asking the first question.`;
+Start by greeting the candidate warmly, then ask them to introduce themselves briefly (name, current role/experience, and why they're interested in this position). After they introduce themselves, proceed with the technical questions.`;
 
       const response = await fetch(
         "https://ai.gateway.lovable.dev/v1/chat/completions",
