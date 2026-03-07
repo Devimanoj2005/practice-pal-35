@@ -182,9 +182,35 @@ export default function FeedbackPage() {
 
   useEffect(() => {
     async function generateFeedback() {
+      // If coming from dashboard, load saved feedback
+      if (config.fromDashboard && config.sessionId) {
+        const { data: savedFeedback } = await supabase
+          .from("interview_feedback")
+          .select("*")
+          .eq("session_id", config.sessionId)
+          .single();
+        if (savedFeedback) {
+          setFeedback({
+            overall_score: savedFeedback.overall_score ?? 0,
+            technical_score: savedFeedback.technical_score ?? 0,
+            communication_score: savedFeedback.communication_score ?? 0,
+            confidence_score: savedFeedback.confidence_score ?? 0,
+            problem_solving_score: savedFeedback.problem_solving_score ?? 0,
+            clarity_score: savedFeedback.clarity_score ?? 0,
+            depth_score: savedFeedback.depth_score ?? 0,
+            strengths: savedFeedback.strengths ?? [],
+            weaknesses: savedFeedback.weaknesses ?? [],
+            suggestions: savedFeedback.suggestions ?? [],
+            question_scores: (savedFeedback.question_scores as any[]) ?? [],
+            summary: savedFeedback.summary ?? "",
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
       const transcript = config.transcript;
       if (!transcript || transcript.length === 0) {
-        // Fallback if no transcript
         setFeedback(null);
         setLoading(false);
         return;
