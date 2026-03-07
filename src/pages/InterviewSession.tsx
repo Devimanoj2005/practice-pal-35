@@ -30,6 +30,8 @@ export default function InterviewSession() {
     questionCount: 5,
   };
 
+  const { user } = useAuth();
+
   const [isActive, setIsActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -37,6 +39,7 @@ export default function InterviewSession() {
   const [isAIThinking, setIsAIThinking] = useState(false);
   const [isUserTurn, setIsUserTurn] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { isListening, transcript, start: startListening, stop: stopListening, supported: sttSupported } = useSpeechRecognition();
