@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Mic, Search, ArrowRight, BarChart3, Clock, TrendingUp, Plus, LogOut, Loader2 } from "lucide-react";
+import { Mic, Search, ArrowRight, BarChart3, Clock, TrendingUp, Plus, LogOut, Loader2, UserCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -107,6 +107,9 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <Button variant="hero" size="sm" onClick={() => navigate("/setup")}>
             <Plus className="w-4 h-4" /> New Interview
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/profile")}>
+            <UserCircle className="w-4 h-4" />
           </Button>
           <Button variant="ghost" size="sm" onClick={handleSignOut}>
             <LogOut className="w-4 h-4" />
