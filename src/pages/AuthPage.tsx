@@ -33,14 +33,10 @@ export default function AuthPage() {
           password,
           options: {
             data: { full_name: displayName },
-            emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
-        toast({
-          title: "Check your email",
-          description: "We sent you a verification link. Please verify your email to sign in.",
-        });
+        navigate("/dashboard");
       }
     } catch (err: any) {
       toast({
