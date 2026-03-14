@@ -49,7 +49,8 @@ export default function ProfilePage() {
     }
 
     const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    setAvatarUrl(publicUrl);
+    const freshUrl = `${publicUrl}?t=${Date.now()}`;
+    setAvatarUrl(freshUrl);
     setUploading(false);
     toast({ title: "Photo uploaded", description: "Your profile photo has been updated." });
   };
