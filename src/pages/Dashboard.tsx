@@ -31,6 +31,15 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadSessions() {
       if (!user) return;
+      
+      // Load profile avatar
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .eq("id", user.id)
+        .single();
+      if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
+
       // Load sessions with their feedback scores
       const { data: sessionsData } = await supabase
         .from("interview_sessions")
