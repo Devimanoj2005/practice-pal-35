@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Mic, Search, ArrowRight, BarChart3, Clock, TrendingUp, Plus, LogOut, Loader2, UserCircle } from "lucide-react";
+import { Mic, Search, ArrowRight, BarChart3, Clock, TrendingUp, Plus, LogOut, Loader2 } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -25,10 +26,20 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSessions() {
       if (!user) return;
+      
+      // Load profile avatar
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .eq("id", user.id)
+        .single();
+      if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
+
       // Load sessions with their feedback scores
       const { data: sessionsData } = await supabase
         .from("interview_sessions")
@@ -108,8 +119,13 @@ export default function Dashboard() {
           <Button variant="hero" size="sm" onClick={() => navigate("/setup")}>
             <Plus className="w-4 h-4" /> New Interview
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/profile")}>
-            <UserCircle className="w-4 h-4" />
+          <Button variant="ghost" size="sm" onClick={() => navigate("/profile")} className="p-0 w-8 h-8 rounded-full">
+            <Avatar className="w-8 h-8">
+              <AvatarImage src={avatarUrl || user?.user_metadata?.avatar_url} alt="Profile" />
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "?"}
+              </AvatarFallback>
+            </Avatar>
           </Button>
           <Button variant="ghost" size="sm" onClick={handleSignOut}>
             <LogOut className="w-4 h-4" />
