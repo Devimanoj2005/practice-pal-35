@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSessions() {
