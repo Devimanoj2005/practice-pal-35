@@ -121,7 +121,7 @@ export default function Dashboard() {
           </Button>
           <Button variant="ghost" size="sm" onClick={() => navigate("/profile")} className="p-0 w-8 h-8 rounded-full">
             <Avatar className="w-8 h-8">
-              <AvatarImage src={user?.user_metadata?.avatar_url} alt="Profile" />
+              <AvatarImage src={avatarUrl || user?.user_metadata?.avatar_url} alt="Profile" />
               <AvatarFallback className="text-xs bg-primary/10 text-primary">
                 {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "?"}
               </AvatarFallback>
